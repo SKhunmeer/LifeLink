@@ -1,0 +1,248 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const shared_1 = require("@bloodlink/shared");
+const authMiddleware_js_1 = require("../middleware/authMiddleware.js");
+const matchingService_js_1 = require("../services/matchingService.js");
+const inventoryService_js_1 = require("../services/inventoryService.js");
+const realtimeService_js_1 = require("../services/realtimeService.js");
+const auditService_js_1 = require("../services/auditService.js");
+const db_js_1 = require("../db.js");
+const uuid_1 = require("uuid");
+const router = (0, express_1.Router)();
+// GET all blood requests
+router.get('/', (req, res) => {
+    const { status, hospitalId, urgency } = req.query;
+    let query = `
+    SELECT r.*, h.name as hospitalName, h.contact_phone as hospitalPhone,
+           u.full_name as patientRequesterName
+    FROM patient_requests r
+    JOIN hospitals h ON h.id = r.hospital_id
+    JOIN user_profiles u ON u.id = r.patient_user_id
+    WHERE 1=1
+  `;
+    const params = [];
+    if (status) {
+        query += ' AND r.status = ?';
+        params.push(status);
+    }
+    if (hospitalId) {
+        query += ' AND r.hospital_id = ?';
+        params.push(hospitalId);
+    }
+    if (urgency) {
+        query += ' AND r.urgency = ?';
+        params.push(urgency);
+    }
+    // Order by critical urgency first, then submitted date
+    query += `
+    ORDER BY 
+      CASE r.urgency 
+        WHEN 'critical' THEN 1 
+        WHEN 'urgent' THEN 2 
+        ELSE 3 
+      END,
+      r.created_at DESC
+  `;
+    const requests = db_js_1.db.prepare(query).all(...params);
+    res.json({ requests });
+});
+// GET single blood request
+router.get('/:id', (req, res) => {
+    const request = db_js_1.db.prepare(`
+    SELECT r.*, h.name as hospitalName, h.lat as hospitalLat, h.lng as hospitalLng,
+           h.contact_phone as hospitalPhone, h.emergency_hotline as emergencyHotline,
+           u.full_name as patientRequesterName, u.phone as patientRequesterPhone
+    FROM patient_requests r
+    JOIN hospitals h ON h.id = r.hospital_id
+    JOIN user_profiles u ON u.id = r.patient_user_id
+    WHERE r.id = ?
+  `).get(req.params.id);
+    if (!request) {
+        return res.status(404).json({ error: 'Blood request not found' });
+    }
+    // Also query facility compatibility
+    const facilityMatches = (0, matchingService_js_1.findCompatibleHospitalInventory)(request.blood_group, request.component, request.hospitalLat, request.hospitalLng);
+    // Query donor matches (pseudonymous!)
+    const donorMatches = db_js_1.db.prepare(`
+    SELECT m.*, dmp.blood_group as donorBloodGroup, dmp.city as donorCity
+    FROM donor_matches m
+    JOIN donor_matching_profiles dmp ON dmp.donor_uuid = m.donor_uuid
+    WHERE m.request_id = ?
+    ORDER BY m.compatibility_score DESC
+  `).all(req.params.id);
+    res.json({
+        request,
+        facilityMatches,
+        donorMatches
+    });
+});
+// POST submit urgent blood request (Patients, Attendants, Staff)
+router.post('/', authMiddleware_js_1.authenticateJWT, async (req, res) => {
+    try {
+        const parse = shared_1.CreatePatientRequestSchema.safeParse(req.body);
+        if (!parse.success) {
+            return res.status(400).json({ error: parse.error.errors[0].message });
+        }
+        const { patientDisplayName, bloodGroup, component, unitsRequired, urgency, hospitalId, requiredByTime, clinicalNotes, treatingDoctor, wardOrBed } = parse.data;
+        // Verify hospital exists
+        const hospital = db_js_1.db.prepare('SELECT * FROM hospitals WHERE id = ?').get(hospitalId);
+        if (!hospital) {
+            return res.status(404).json({ error: 'Selected hospital not found' });
+        }
+        const requestId = (0, uuid_1.v4)();
+        db_js_1.db.prepare(`
+      INSERT INTO patient_requests (id, patient_user_id, patient_display_name, blood_group, component, units_required, units_reserved, urgency, hospital_id, status, required_by_time, clinical_notes, treating_doctor, ward_or_bed)
+      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, 'submitted', ?, ?, ?, ?)
+    `).run(requestId, req.user.userId, patientDisplayName, bloodGroup, component, unitsRequired, urgency, hospitalId, requiredByTime, clinicalNotes || null, treatingDoctor || null, wardOrBed || null);
+        // Rank available compatible hospital inventory
+        const facilityMatches = (0, matchingService_js_1.findCompatibleHospitalInventory)(bloodGroup, component, hospital.lat, hospital.lng);
+        (0, realtimeService_js_1.broadcastRealtimeEvent)('REQUEST_CREATED', {
+            requestId,
+            patientDisplayName,
+            bloodGroup,
+            component,
+            unitsRequired,
+            urgency,
+            hospitalId,
+            hospitalName: hospital.name
+        });
+        (0, auditService_js_1.logAuditEvent)({
+            actorUserId: req.user.userId,
+            actorRole: req.user.role,
+            action: 'PATIENT_REQUEST_SUBMITTED',
+            resourceType: 'patient_requests',
+            resourceId: requestId,
+            metadata: { bloodGroup, component, unitsRequired, urgency, hospitalId }
+        });
+        res.status(201).json({
+            success: true,
+            requestId,
+            facilityMatches
+        });
+    }
+    catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+// POST verify request by hospital staff
+router.post('/:id/verify', authMiddleware_js_1.authenticateJWT, (0, authMiddleware_js_1.requireRole)(['hospital_staff', 'admin']), (req, res) => {
+    const { id } = req.params;
+    const request = db_js_1.db.prepare('SELECT * FROM patient_requests WHERE id = ?').get(id);
+    if (!request) {
+        return res.status(404).json({ error: 'Request not found' });
+    }
+    db_js_1.db.prepare(`
+    UPDATE patient_requests
+    SET status = 'verified', updated_at = datetime('now')
+    WHERE id = ?
+  `).run(id);
+    (0, realtimeService_js_1.broadcastRealtimeEvent)('REQUEST_STATUS_UPDATED', { requestId: id, newStatus: 'verified' });
+    (0, auditService_js_1.logAuditEvent)({
+        actorUserId: req.user.userId,
+        actorRole: 'hospital_staff',
+        action: 'REQUEST_VERIFIED',
+        resourceType: 'patient_requests',
+        resourceId: id
+    });
+    res.json({ success: true, status: 'verified' });
+});
+// POST reserve blood units atomically for verified request
+router.post('/:id/reserve', authMiddleware_js_1.authenticateJWT, (0, authMiddleware_js_1.requireRole)(['hospital_staff', 'admin']), (req, res) => {
+    try {
+        const { id } = req.params;
+        const { inventoryId, units } = req.body;
+        if (!inventoryId || !units || units < 1) {
+            return res.status(400).json({ error: 'inventoryId and units (>= 1) are required' });
+        }
+        const request = db_js_1.db.prepare('SELECT * FROM patient_requests WHERE id = ?').get(id);
+        if (!request) {
+            return res.status(404).json({ error: 'Request not found' });
+        }
+        // Atomic reservation through inventoryService
+        const adjustResult = (0, inventoryService_js_1.adjustInventoryAtomic)({
+            inventoryId,
+            action: 'reserve',
+            units: Number(units),
+            reason: `Reserved for emergency request #${id}`,
+            referenceRequestId: id,
+            performedByUserId: req.user.userId
+        });
+        // Update patient_requests
+        const newReserved = (request.units_reserved || 0) + Number(units);
+        const newStatus = newReserved >= request.units_required ? 'reserved' : request.status;
+        db_js_1.db.prepare(`
+      UPDATE patient_requests
+      SET units_reserved = ?, status = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(newReserved, newStatus, id);
+        (0, realtimeService_js_1.broadcastRealtimeEvent)('REQUEST_STATUS_UPDATED', {
+            requestId: id,
+            unitsReserved: newReserved,
+            newStatus
+        });
+        res.json({ success: true, unitsReserved: newReserved, status: newStatus });
+    }
+    catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+// POST trigger emergency donor outreach
+router.post('/:id/donor-outreach', authMiddleware_js_1.authenticateJWT, (0, authMiddleware_js_1.requireRole)(['hospital_staff', 'admin']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await (0, matchingService_js_1.triggerDonorMatchingWorkflow)({
+            requestId: id,
+            performedByUserId: req.user.userId
+        });
+        res.json({ success: true, ...result });
+    }
+    catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+// POST fulfill request
+router.post('/:id/fulfill', authMiddleware_js_1.authenticateJWT, (0, authMiddleware_js_1.requireRole)(['hospital_staff', 'admin']), (req, res) => {
+    const { id } = req.params;
+    const request = db_js_1.db.prepare('SELECT * FROM patient_requests WHERE id = ?').get(id);
+    if (!request) {
+        return res.status(404).json({ error: 'Request not found' });
+    }
+    db_js_1.db.prepare(`
+    UPDATE patient_requests
+    SET status = 'fulfilled', updated_at = datetime('now')
+    WHERE id = ?
+  `).run(id);
+    (0, realtimeService_js_1.broadcastRealtimeEvent)('REQUEST_STATUS_UPDATED', { requestId: id, newStatus: 'fulfilled' });
+    (0, auditService_js_1.logAuditEvent)({
+        actorUserId: req.user.userId,
+        actorRole: 'hospital_staff',
+        action: 'REQUEST_FULFILLED',
+        resourceType: 'patient_requests',
+        resourceId: id
+    });
+    res.json({ success: true, status: 'fulfilled' });
+});
+// POST cancel request
+router.post('/:id/cancel', authMiddleware_js_1.authenticateJWT, (req, res) => {
+    const { id } = req.params;
+    const request = db_js_1.db.prepare('SELECT * FROM patient_requests WHERE id = ?').get(id);
+    if (!request) {
+        return res.status(404).json({ error: 'Request not found' });
+    }
+    db_js_1.db.prepare(`
+    UPDATE patient_requests
+    SET status = 'cancelled', updated_at = datetime('now')
+    WHERE id = ?
+  `).run(id);
+    (0, realtimeService_js_1.broadcastRealtimeEvent)('REQUEST_STATUS_UPDATED', { requestId: id, newStatus: 'cancelled' });
+    (0, auditService_js_1.logAuditEvent)({
+        actorUserId: req.user.userId,
+        actorRole: req.user.role,
+        action: 'REQUEST_CANCELLED',
+        resourceType: 'patient_requests',
+        resourceId: id
+    });
+    res.json({ success: true, status: 'cancelled' });
+});
+exports.default = router;

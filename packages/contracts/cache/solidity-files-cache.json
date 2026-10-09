@@ -1,0 +1,41 @@
+{
+  "_format": "hh-sol-cache-2",
+  "files": {
+    "/Users/syedkhunmeer/LifeLink/packages/contracts/contracts/DonationEligibilityRegistry.sol": {
+      "lastModificationDate": 1791538444418,
+      "contentHash": "7d7c73f9fd24e6e7a26a52e0477ebd62",
+      "sourceName": "contracts/DonationEligibilityRegistry.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "DonationEligibilityRegistry"
+      ]
+    }
+  }
+}
