@@ -37,6 +37,8 @@ export function initDatabase() {
       lng REAL NOT NULL,
       contact_phone TEXT NOT NULL,
       emergency_hotline TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'bloodlink',
+      source_id TEXT,
       is_verified INTEGER DEFAULT 0,
       operating_hours TEXT DEFAULT '24/7 Emergency Transfusion Service',
       available_beds INTEGER DEFAULT 100,
@@ -126,6 +128,9 @@ export function initDatabase() {
       units_reserved INTEGER NOT NULL DEFAULT 0,
       urgency TEXT NOT NULL CHECK (urgency IN ('routine', 'urgent', 'critical')),
       hospital_id TEXT NOT NULL REFERENCES hospitals(id),
+      requester_lat REAL,
+      requester_lng REAL,
+      requester_location_source TEXT,
       status TEXT NOT NULL DEFAULT 'submitted' CHECK (status IN ('submitted', 'verified', 'reserved', 'donor_outreach', 'in_transit', 'fulfilled', 'cancelled')),
       required_by_time TEXT NOT NULL,
       clinical_notes TEXT,
@@ -202,6 +207,20 @@ export function initDatabase() {
       timestamp TEXT DEFAULT (datetime('now'))
     );
   `);
+
+  const ensureColumn = (table: string, column: string, definition: string) => {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (!columns.some((item) => item.name === column)) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
+  };
+
+  ensureColumn('hospitals', 'source', "TEXT NOT NULL DEFAULT 'bloodlink'");
+  ensureColumn('hospitals', 'source_id', 'TEXT');
+  ensureColumn('patient_requests', 'requester_lat', 'REAL');
+  ensureColumn('patient_requests', 'requester_lng', 'REAL');
+  ensureColumn('patient_requests', 'requester_location_source', 'TEXT');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_hospitals_source_id ON hospitals(source_id) WHERE source_id IS NOT NULL');
 
   seedIfEmpty();
 }

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 import request from 'supertest';
 import { app } from './server.js';
 
@@ -69,6 +69,74 @@ describe('BloodLink AI Backend API Integration Tests', () => {
     expect(res.body.requestId).toBeDefined();
     expect(Array.isArray(res.body.facilityMatches)).toBe(true);
     testRequestId = res.body.requestId;
+
+    const refreshedRequests = await request(app).get('/api/requests');
+    expect(refreshedRequests.status).toBe(200);
+    expect(refreshedRequests.body.requests.some((item: { id: string }) => item.id === testRequestId)).toBe(true);
+  });
+
+  it('GET /api/hospitals/nearby rejects invalid coordinates and radius', async () => {
+    const res = await request(app).get('/api/hospitals/nearby?lat=91&lng=20&radius=5000');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('latitude');
+  });
+
+  it('GET /api/hospitals/geocode validates a user-provided place query', async () => {
+    const res = await request(app).get('/api/hospitals/geocode?q=ab');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('between 3 and 200 characters');
+  });
+
+  it('POST /api/requests accepts a live nearby hospital and persists its location source', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        elements: [{
+          type: 'node',
+          id: 987654321,
+          lat: 17.6397,
+          lon: 78.474,
+          tags: { name: 'Community Health Center Medchal', amenity: 'hospital' },
+        }],
+      }),
+    }));
+
+    try {
+      const res = await request(app)
+        .post('/api/requests')
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({
+          patientDisplayName: 'Medchal Emergency Case',
+          bloodGroup: 'O+',
+          component: 'packed_red_blood_cells',
+          unitsRequired: 2,
+          urgency: 'urgent',
+          externalHospitalId: 'node/987654321',
+          requesterLat: 17.6339929,
+          requesterLng: 78.4843146,
+          requesterLocationSource: 'manual',
+          requiredByTime: new Date(Date.now() + 2 * 3600 * 1000).toISOString(),
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      expect(res.body.hospitalName).toBe('Community Health Center Medchal');
+      expect(res.body.hospitalSource).toBe('openstreetmap');
+      expect(res.body.facilityMatches).toEqual([]);
+
+      const refreshedRequests = await request(app).get('/api/requests');
+      const savedRequest = refreshedRequests.body.requests.find((item: { id: string }) => item.id === res.body.requestId);
+      expect(savedRequest).toMatchObject({
+        hospitalName: 'Community Health Center Medchal',
+        hospitalSource: 'openstreetmap',
+        requester_lat: 17.6339929,
+        requester_lng: 78.4843146,
+        requester_location_source: 'manual',
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('POST /api/requests/:id/verify verifies the emergency request', async () => {

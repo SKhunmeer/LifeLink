@@ -18,7 +18,7 @@ export interface HospitalFacilityMatch {
 /**
  * Discovers and ranks registered hospitals & blood banks with compatible inventory
  */
-export declare function findCompatibleHospitalInventory(patientBloodGroup: BloodGroup, component: BloodComponent, targetLat: number, targetLng: number): HospitalFacilityMatch[];
+export declare function findCompatibleHospitalInventory(patientBloodGroup: BloodGroup, component: BloodComponent, targetLat: number, targetLng: number, maxDistanceKm?: number): HospitalFacilityMatch[];
 /**
  * Matches eligible voluntary donors and dispatches consent-based emergency alerts
  */

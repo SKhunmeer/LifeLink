@@ -3,13 +3,51 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const db_js_1 = require("../db.js");
 const authMiddleware_js_1 = require("../middleware/authMiddleware.js");
+const nearbyHospitalService_js_1 = require("../services/nearbyHospitalService.js");
+const locationSearchService_js_1 = require("../services/locationSearchService.js");
 const router = (0, express_1.Router)();
+router.get('/geocode', async (req, res) => {
+    const query = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    if (query.length < 3 || query.length > 200) {
+        return res.status(400).json({ error: 'Enter a place name between 3 and 200 characters.' });
+    }
+    try {
+        const places = await (0, locationSearchService_js_1.searchPlaces)(query);
+        return res.json({ places, source: 'OpenStreetMap Nominatim' });
+    }
+    catch (error) {
+        console.error('[PlaceSearch] Geocoding failed:', error);
+        return res.status(502).json({
+            error: error instanceof Error ? error.message : 'Live place search is temporarily unavailable. Please retry.',
+        });
+    }
+});
+router.get('/nearby', async (req, res) => {
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    const radius = Number(req.query.radius ?? 5000);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90
+        || !Number.isFinite(lng) || lng < -180 || lng > 180
+        || !Number.isInteger(radius) || radius < 1000 || radius > 25000) {
+        return res.status(400).json({ error: 'Valid latitude, longitude, and a search radius from 1–25 km are required.' });
+    }
+    try {
+        const hospitals = await (0, nearbyHospitalService_js_1.searchNearbyHospitals)(lat, lng, radius);
+        return res.json({ hospitals, source: 'OpenStreetMap' });
+    }
+    catch (error) {
+        console.error('[NearbyHospitals] Search failed:', error);
+        return res.status(502).json({
+            error: error instanceof Error ? error.message : 'Nearby hospital search is temporarily unavailable. Please retry.',
+        });
+    }
+});
 // GET all registered hospitals and blood banks
 router.get('/', (req, res) => {
     const hospitals = db_js_1.db.prepare(`
     SELECT h.*, 
            COUNT(DISTINCT i.id) as inventoryBatchesCount,
-           COALESCE(SUM(CASE WHEN i.status = 'available' THEN i.units_count ELSE 0 END), 0) as totalAvailableUnits
+           COALESCE(SUM(CASE WHEN i.status = 'available' AND date(i.expiry_date) >= date('now') THEN i.units_count ELSE 0 END), 0) as totalAvailableUnits
     FROM hospitals h
     LEFT JOIN blood_inventory i ON i.hospital_id = h.id
     GROUP BY h.id

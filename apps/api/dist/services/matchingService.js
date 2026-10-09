@@ -13,11 +13,13 @@ const auditService_js_1 = require("./auditService.js");
 /**
  * Discovers and ranks registered hospitals & blood banks with compatible inventory
  */
-function findCompatibleHospitalInventory(patientBloodGroup, component, targetLat, targetLng) {
+function findCompatibleHospitalInventory(patientBloodGroup, component, targetLat, targetLng, maxDistanceKm = 25) {
     const hospitals = db_js_1.db.prepare('SELECT * FROM hospitals WHERE is_verified = 1').all();
     const results = [];
     for (const h of hospitals) {
         const distanceKm = (0, shared_1.calculateDistanceKm)(targetLat, targetLng, h.lat, h.lng);
+        if (distanceKm > maxDistanceKm)
+            continue;
         // Fetch available inventory items for this hospital
         const items = db_js_1.db.prepare(`
       SELECT blood_group, units_count, expiry_date

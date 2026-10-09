@@ -61,7 +61,7 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     version: '1.0.0',
     twilioMode: process.env.TWILIO_ACCOUNT_SID ? 'live' : 'mock_sandbox',
-    database: 'PostgreSQL / SQLite Dual Engine'
+    database: 'SQLite'
   });
 });
 

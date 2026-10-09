@@ -258,13 +258,39 @@ export const CreatePatientRequestSchema = z.object({
   component: z.enum(BLOOD_COMPONENTS),
   unitsRequired: z.number().int().min(1, 'At least 1 unit required').max(20, 'Maximum 20 units per single emergency request'),
   urgency: z.enum(REQUEST_URGENCIES),
-  hospitalId: z.string().min(1, 'Receiving hospital selection required'),
+  hospitalId: z.string().min(1).optional(),
+  externalHospitalId: z.string().min(1).optional(),
   requiredByTime: z.string().refine((val) => !isNaN(Date.parse(val)), {
     message: 'Valid required-by ISO timestamp required'
   }),
   clinicalNotes: z.string().max(500).optional(),
   treatingDoctor: z.string().optional(),
-  wardOrBed: z.string().optional()
+  wardOrBed: z.string().optional(),
+  requesterLat: z.number().min(-90).max(90).optional(),
+  requesterLng: z.number().min(-180).max(180).optional(),
+  requesterLocationSource: z.enum(['device', 'manual']).optional()
+}).superRefine((data, context) => {
+  if (Boolean(data.hospitalId) === Boolean(data.externalHospitalId)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Select one registered or live nearby receiving hospital',
+      path: ['hospitalId']
+    });
+  }
+  if ((data.requesterLat === undefined) !== (data.requesterLng === undefined)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Both requester latitude and longitude must be provided together',
+      path: ['requesterLat']
+    });
+  }
+  if (data.externalHospitalId && (data.requesterLat === undefined || data.requesterLng === undefined)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Location is required to verify a live nearby receiving hospital',
+      path: ['requesterLat']
+    });
+  }
 });
 
 export type CreatePatientRequestInput = z.infer<typeof CreatePatientRequestSchema>;

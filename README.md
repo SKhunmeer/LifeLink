@@ -57,6 +57,14 @@ Default test password for all seeded accounts: `BloodLink2026!`
 
 ---
 
+## Location and Nearby Hospital Search
+
+The facility map requests device location through the browser Geolocation API when opened. Location requires HTTPS in production (localhost is permitted for development); denial, timeout, and unavailable-device errors can be retried from the map. If device GPS is unavailable, the user can explicitly search for and select a place (the manual area is approximate, not GPS); the map initially suggests Medchal, Telangana, based on the user-provided area. Coordinates are sent to the backend and searched through OpenStreetMap Overpass within 5 km by default, with a 10 km option. If Overpass is temporarily unavailable, a spatially bounded OpenStreetMap Nominatim search is used as a live fallback. Place search is also provided by Nominatim. No Places API key is required. Backend-only `OVERPASS_API_URL` and `NOMINATIM_API_URL` variables can override the public endpoints.
+
+Nearby place records can include mapped names, addresses, and phone numbers; the source does not verify transfusion services or current blood inventory, so availability is shown as unknown. The emergency-request form offers live hospitals around the chosen location as receiving facilities. Before saving, the API revalidates the selected facility against live nearby results, stores its OSM provenance as unverified, and saves the request location and whether it came from device GPS or a manually selected approximate area. These external listings do not imply BloodLink registration, clinical service verification, or available stock. Compatible-unit counts are shown separately and only from verified BloodLink hospital inventory within 25 km, avoiding distant demo facilities being presented as nearby. Emergency requests are persisted in the configured SQLite database (`DATABASE_PATH`) and use the signed-in account's validated phone number for follow-up.
+
+---
+
 ## Project Structure
 
 ```

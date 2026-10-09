@@ -13,6 +13,26 @@ export interface UserSession {
   donor?: any;
 }
 
+export interface NearbyHospital {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  address: string | null;
+  phone: string | null;
+  distanceKm: number;
+  availability: 'unknown';
+  directionsUrl: string;
+}
+
+export interface GeocodedPlace {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  category: string;
+}
+
 class ApiClient {
   private token: string | null = null;
 
@@ -196,6 +216,20 @@ class ApiClient {
   // Facilities & Hospitals
   async getHospitals() {
     return this.request('/api/hospitals');
+  }
+
+  async getNearbyHospitals(lat: number, lng: number, radiusMeters = 5000): Promise<{ hospitals: NearbyHospital[]; source: string }> {
+    const params = new URLSearchParams({
+      lat: String(lat),
+      lng: String(lng),
+      radius: String(radiusMeters),
+    });
+    return this.request(`/api/hospitals/nearby?${params.toString()}`);
+  }
+
+  async searchPlaces(query: string): Promise<{ places: GeocodedPlace[]; source: string }> {
+    const params = new URLSearchParams({ q: query });
+    return this.request(`/api/hospitals/geocode?${params.toString()}`);
   }
 
   async verifyHospital(id: string) {

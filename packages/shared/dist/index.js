@@ -79,13 +79,39 @@ exports.CreatePatientRequestSchema = zod_1.z.object({
     component: zod_1.z.enum(exports.BLOOD_COMPONENTS),
     unitsRequired: zod_1.z.number().int().min(1, 'At least 1 unit required').max(20, 'Maximum 20 units per single emergency request'),
     urgency: zod_1.z.enum(exports.REQUEST_URGENCIES),
-    hospitalId: zod_1.z.string().min(1, 'Receiving hospital selection required'),
+    hospitalId: zod_1.z.string().min(1).optional(),
+    externalHospitalId: zod_1.z.string().min(1).optional(),
     requiredByTime: zod_1.z.string().refine((val) => !isNaN(Date.parse(val)), {
         message: 'Valid required-by ISO timestamp required'
     }),
     clinicalNotes: zod_1.z.string().max(500).optional(),
     treatingDoctor: zod_1.z.string().optional(),
-    wardOrBed: zod_1.z.string().optional()
+    wardOrBed: zod_1.z.string().optional(),
+    requesterLat: zod_1.z.number().min(-90).max(90).optional(),
+    requesterLng: zod_1.z.number().min(-180).max(180).optional(),
+    requesterLocationSource: zod_1.z.enum(['device', 'manual']).optional()
+}).superRefine((data, context) => {
+    if (Boolean(data.hospitalId) === Boolean(data.externalHospitalId)) {
+        context.addIssue({
+            code: zod_1.z.ZodIssueCode.custom,
+            message: 'Select one registered or live nearby receiving hospital',
+            path: ['hospitalId']
+        });
+    }
+    if ((data.requesterLat === undefined) !== (data.requesterLng === undefined)) {
+        context.addIssue({
+            code: zod_1.z.ZodIssueCode.custom,
+            message: 'Both requester latitude and longitude must be provided together',
+            path: ['requesterLat']
+        });
+    }
+    if (data.externalHospitalId && (data.requesterLat === undefined || data.requesterLng === undefined)) {
+        context.addIssue({
+            code: zod_1.z.ZodIssueCode.custom,
+            message: 'Location is required to verify a live nearby receiving hospital',
+            path: ['requesterLat']
+        });
+    }
 });
 exports.InventoryUpdateSchema = zod_1.z.object({
     bloodGroup: zod_1.z.enum(exports.BLOOD_GROUPS),

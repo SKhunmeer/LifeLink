@@ -203,39 +203,81 @@ export declare const LoginSchema: z.ZodObject<{
     password: string;
 }>;
 export type LoginInput = z.infer<typeof LoginSchema>;
-export declare const CreatePatientRequestSchema: z.ZodObject<{
+export declare const CreatePatientRequestSchema: z.ZodEffects<z.ZodObject<{
     patientDisplayName: z.ZodString;
     bloodGroup: z.ZodEnum<["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]>;
     component: z.ZodEnum<["packed_red_blood_cells", "platelets", "plasma", "whole_blood", "cryoprecipitate"]>;
     unitsRequired: z.ZodNumber;
     urgency: z.ZodEnum<["routine", "urgent", "critical"]>;
-    hospitalId: z.ZodString;
+    hospitalId: z.ZodOptional<z.ZodString>;
+    externalHospitalId: z.ZodOptional<z.ZodString>;
     requiredByTime: z.ZodEffects<z.ZodString, string, string>;
     clinicalNotes: z.ZodOptional<z.ZodString>;
     treatingDoctor: z.ZodOptional<z.ZodString>;
     wardOrBed: z.ZodOptional<z.ZodString>;
+    requesterLat: z.ZodOptional<z.ZodNumber>;
+    requesterLng: z.ZodOptional<z.ZodNumber>;
+    requesterLocationSource: z.ZodOptional<z.ZodEnum<["device", "manual"]>>;
 }, "strip", z.ZodTypeAny, {
     bloodGroup: "A+" | "A-" | "B+" | "B-" | "AB+" | "AB-" | "O+" | "O-";
-    hospitalId: string;
     patientDisplayName: string;
     component: "packed_red_blood_cells" | "platelets" | "plasma" | "whole_blood" | "cryoprecipitate";
     unitsRequired: number;
     urgency: "routine" | "urgent" | "critical";
     requiredByTime: string;
+    hospitalId?: string | undefined;
+    externalHospitalId?: string | undefined;
     clinicalNotes?: string | undefined;
     treatingDoctor?: string | undefined;
     wardOrBed?: string | undefined;
+    requesterLat?: number | undefined;
+    requesterLng?: number | undefined;
+    requesterLocationSource?: "device" | "manual" | undefined;
 }, {
     bloodGroup: "A+" | "A-" | "B+" | "B-" | "AB+" | "AB-" | "O+" | "O-";
-    hospitalId: string;
     patientDisplayName: string;
     component: "packed_red_blood_cells" | "platelets" | "plasma" | "whole_blood" | "cryoprecipitate";
     unitsRequired: number;
     urgency: "routine" | "urgent" | "critical";
     requiredByTime: string;
+    hospitalId?: string | undefined;
+    externalHospitalId?: string | undefined;
     clinicalNotes?: string | undefined;
     treatingDoctor?: string | undefined;
     wardOrBed?: string | undefined;
+    requesterLat?: number | undefined;
+    requesterLng?: number | undefined;
+    requesterLocationSource?: "device" | "manual" | undefined;
+}>, {
+    bloodGroup: "A+" | "A-" | "B+" | "B-" | "AB+" | "AB-" | "O+" | "O-";
+    patientDisplayName: string;
+    component: "packed_red_blood_cells" | "platelets" | "plasma" | "whole_blood" | "cryoprecipitate";
+    unitsRequired: number;
+    urgency: "routine" | "urgent" | "critical";
+    requiredByTime: string;
+    hospitalId?: string | undefined;
+    externalHospitalId?: string | undefined;
+    clinicalNotes?: string | undefined;
+    treatingDoctor?: string | undefined;
+    wardOrBed?: string | undefined;
+    requesterLat?: number | undefined;
+    requesterLng?: number | undefined;
+    requesterLocationSource?: "device" | "manual" | undefined;
+}, {
+    bloodGroup: "A+" | "A-" | "B+" | "B-" | "AB+" | "AB-" | "O+" | "O-";
+    patientDisplayName: string;
+    component: "packed_red_blood_cells" | "platelets" | "plasma" | "whole_blood" | "cryoprecipitate";
+    unitsRequired: number;
+    urgency: "routine" | "urgent" | "critical";
+    requiredByTime: string;
+    hospitalId?: string | undefined;
+    externalHospitalId?: string | undefined;
+    clinicalNotes?: string | undefined;
+    treatingDoctor?: string | undefined;
+    wardOrBed?: string | undefined;
+    requesterLat?: number | undefined;
+    requesterLng?: number | undefined;
+    requesterLocationSource?: "device" | "manual" | undefined;
 }>;
 export type CreatePatientRequestInput = z.infer<typeof CreatePatientRequestSchema>;
 export declare const InventoryUpdateSchema: z.ZodObject<{

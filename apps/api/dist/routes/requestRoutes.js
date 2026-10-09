@@ -7,6 +7,8 @@ const matchingService_js_1 = require("../services/matchingService.js");
 const inventoryService_js_1 = require("../services/inventoryService.js");
 const realtimeService_js_1 = require("../services/realtimeService.js");
 const auditService_js_1 = require("../services/auditService.js");
+const nearbyHospitalService_js_1 = require("../services/nearbyHospitalService.js");
+const externalHospitalService_js_1 = require("../services/externalHospitalService.js");
 const db_js_1 = require("../db.js");
 const uuid_1 = require("uuid");
 const router = (0, express_1.Router)();
@@ -14,7 +16,8 @@ const router = (0, express_1.Router)();
 router.get('/', (req, res) => {
     const { status, hospitalId, urgency } = req.query;
     let query = `
-    SELECT r.*, h.name as hospitalName, h.contact_phone as hospitalPhone,
+    SELECT r.*, h.name as hospitalName, h.lat as hospitalLat, h.lng as hospitalLng,
+           h.contact_phone as hospitalPhone, h.source as hospitalSource,
            u.full_name as patientRequesterName
     FROM patient_requests r
     JOIN hospitals h ON h.id = r.hospital_id
@@ -52,6 +55,7 @@ router.get('/:id', (req, res) => {
     const request = db_js_1.db.prepare(`
     SELECT r.*, h.name as hospitalName, h.lat as hospitalLat, h.lng as hospitalLng,
            h.contact_phone as hospitalPhone, h.emergency_hotline as emergencyHotline,
+           h.source as hospitalSource,
            u.full_name as patientRequesterName, u.phone as patientRequesterPhone
     FROM patient_requests r
     JOIN hospitals h ON h.id = r.hospital_id
@@ -84,45 +88,97 @@ router.post('/', authMiddleware_js_1.authenticateJWT, async (req, res) => {
         if (!parse.success) {
             return res.status(400).json({ error: parse.error.errors[0].message });
         }
-        const { patientDisplayName, bloodGroup, component, unitsRequired, urgency, hospitalId, requiredByTime, clinicalNotes, treatingDoctor, wardOrBed } = parse.data;
+        const { patientDisplayName, bloodGroup, component, unitsRequired, urgency, hospitalId, externalHospitalId, requiredByTime, clinicalNotes, treatingDoctor, wardOrBed, requesterLat, requesterLng, requesterLocationSource } = parse.data;
+        const requester = db_js_1.db.prepare('SELECT phone FROM user_profiles WHERE id = ?').get(req.user.userId);
+        const contactDigits = requester?.phone?.replace(/\D/g, '') || '';
+        if (contactDigits.length < 10 || contactDigits.length > 15) {
+            return res.status(400).json({ error: 'A valid contact phone number is required on your account before submitting a request.' });
+        }
+        let receivingHospitalId = hospitalId;
+        if (externalHospitalId) {
+            let liveFacilities;
+            try {
+                liveFacilities = await (0, nearbyHospitalService_js_1.searchNearbyHospitals)(requesterLat, requesterLng, 10000);
+            }
+            catch (error) {
+                console.error('[Requests] Live receiving-hospital verification failed:', error);
+                return res.status(502).json({
+                    error: error instanceof Error
+                        ? `Could not verify the live receiving hospital: ${error.message}`
+                        : 'Could not verify the live receiving hospital. Please refresh nearby results and retry.',
+                });
+            }
+            const selectedFacility = liveFacilities.find((facility) => facility.id === externalHospitalId
+                || facility.id.replace(/^nominatim\//, '') === externalHospitalId.replace(/^nominatim\//, ''));
+            if (!selectedFacility) {
+                return res.status(400).json({ error: 'The selected live hospital is no longer within the search results. Refresh nearby hospitals and select again.' });
+            }
+            receivingHospitalId = (0, externalHospitalService_js_1.findOrCreateExternalHospital)(selectedFacility);
+        }
         // Verify hospital exists
-        const hospital = db_js_1.db.prepare('SELECT * FROM hospitals WHERE id = ?').get(hospitalId);
+        const hospital = db_js_1.db.prepare('SELECT * FROM hospitals WHERE id = ?').get(receivingHospitalId);
         if (!hospital) {
             return res.status(404).json({ error: 'Selected hospital not found' });
         }
         const requestId = (0, uuid_1.v4)();
-        db_js_1.db.prepare(`
-      INSERT INTO patient_requests (id, patient_user_id, patient_display_name, blood_group, component, units_required, units_reserved, urgency, hospital_id, status, required_by_time, clinical_notes, treating_doctor, ward_or_bed)
-      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, 'submitted', ?, ?, ?, ?)
-    `).run(requestId, req.user.userId, patientDisplayName, bloodGroup, component, unitsRequired, urgency, hospitalId, requiredByTime, clinicalNotes || null, treatingDoctor || null, wardOrBed || null);
-        // Rank available compatible hospital inventory
-        const facilityMatches = (0, matchingService_js_1.findCompatibleHospitalInventory)(bloodGroup, component, hospital.lat, hospital.lng);
-        (0, realtimeService_js_1.broadcastRealtimeEvent)('REQUEST_CREATED', {
-            requestId,
-            patientDisplayName,
-            bloodGroup,
-            component,
-            unitsRequired,
-            urgency,
-            hospitalId,
-            hospitalName: hospital.name
-        });
-        (0, auditService_js_1.logAuditEvent)({
-            actorUserId: req.user.userId,
-            actorRole: req.user.role,
-            action: 'PATIENT_REQUEST_SUBMITTED',
-            resourceType: 'patient_requests',
-            resourceId: requestId,
-            metadata: { bloodGroup, component, unitsRequired, urgency, hospitalId }
-        });
+        const facilityMatches = db_js_1.db.transaction(() => {
+            db_js_1.db.prepare(`
+        INSERT INTO patient_requests (
+          id, patient_user_id, patient_display_name, blood_group, component,
+          units_required, units_reserved, urgency, hospital_id, requester_lat,
+          requester_lng, requester_location_source, status, required_by_time,
+          clinical_notes, treating_doctor, ward_or_bed
+        )
+        VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, 'submitted', ?, ?, ?, ?)
+      `).run(requestId, req.user.userId, patientDisplayName, bloodGroup, component, unitsRequired, urgency, receivingHospitalId, requesterLat ?? null, requesterLng ?? null, requesterLocationSource ?? null, requiredByTime, clinicalNotes || null, treatingDoctor || null, wardOrBed || null);
+            const matches = (0, matchingService_js_1.findCompatibleHospitalInventory)(bloodGroup, component, requesterLat ?? hospital.lat, requesterLng ?? hospital.lng);
+            (0, auditService_js_1.logAuditEvent)({
+                actorUserId: req.user.userId,
+                actorRole: req.user.role,
+                action: 'PATIENT_REQUEST_SUBMITTED',
+                resourceType: 'patient_requests',
+                resourceId: requestId,
+                metadata: {
+                    bloodGroup,
+                    component,
+                    unitsRequired,
+                    urgency,
+                    hospitalId: receivingHospitalId,
+                    hospitalSource: hospital.source
+                }
+            });
+            return matches;
+        })();
+        const warnings = [];
+        try {
+            (0, realtimeService_js_1.broadcastRealtimeEvent)('REQUEST_CREATED', {
+                requestId,
+                patientDisplayName,
+                bloodGroup,
+                component,
+                unitsRequired,
+                urgency,
+                hospitalId: receivingHospitalId,
+                hospitalName: hospital.name,
+                hospitalSource: hospital.source
+            });
+        }
+        catch (error) {
+            console.error('[Requests] Request was saved, but realtime notification failed:', error);
+            warnings.push('The request was saved, but live dashboard updates may be delayed.');
+        }
         res.status(201).json({
             success: true,
             requestId,
-            facilityMatches
+            hospitalName: hospital.name,
+            hospitalSource: hospital.source,
+            facilityMatches,
+            warnings
         });
     }
     catch (error) {
-        res.status(400).json({ error: error.message });
+        console.error('[Requests] Failed to create emergency request:', error);
+        res.status(500).json({ error: 'The emergency request could not be saved. Please retry.' });
     }
 });
 // POST verify request by hospital staff

@@ -30,13 +30,15 @@ export function findCompatibleHospitalInventory(
   patientBloodGroup: BloodGroup,
   component: BloodComponent,
   targetLat: number,
-  targetLng: number
+  targetLng: number,
+  maxDistanceKm = 25
 ): HospitalFacilityMatch[] {
   const hospitals = db.prepare('SELECT * FROM hospitals WHERE is_verified = 1').all() as any[];
   const results: HospitalFacilityMatch[] = [];
 
   for (const h of hospitals) {
     const distanceKm = calculateDistanceKm(targetLat, targetLng, h.lat, h.lng);
+    if (distanceKm > maxDistanceKm) continue;
 
     // Fetch available inventory items for this hospital
     const items = db.prepare(`

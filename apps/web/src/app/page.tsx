@@ -22,7 +22,7 @@ import { LiveInventorySection } from '../components/LiveInventorySection';
 import { EmergencyRequestSection } from '../components/EmergencyRequestSection';
 import { DonorPortalSection } from '../components/DonorPortalSection';
 import { AdminAuditSection } from '../components/AdminAuditSection';
-import { InteractiveMap } from '../components/InteractiveMap';
+import { InteractiveMap, type LocationSelection } from '../components/InteractiveMap';
 import { NotificationSimulatorDrawer } from '../components/NotificationSimulatorDrawer';
 import { Web3TrustDrawer } from '../components/Web3TrustDrawer';
 import { api, UserSession } from '../lib/api';
@@ -67,6 +67,7 @@ export default function Home() {
   const [inventory, setInventory] = useState<any[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
   const [hospitals, setHospitals] = useState<any[]>([]);
+  const [currentLocation, setCurrentLocation] = useState<LocationSelection | null>(null);
   const [donorProfile, setDonorProfile] = useState<any>(null);
   const [matchingRequests, setMatchingRequests] = useState<any[]>([]);
   const [donationHistory, setDonationHistory] = useState<any[]>([]);
@@ -584,9 +585,17 @@ export default function Home() {
               <EmergencyRequestSection
                 requests={requests}
                 hospitals={hospitals}
+                requesterPhone={session?.user?.phone || ''}
+                currentLocation={currentLocation}
+                onLocationChange={setCurrentLocation}
                 userRole={session?.user?.role || 'patient'}
                 onRefresh={loadData}
-                onCreateRequest={async (data) => api.createRequest(data)}
+                onCreateRequest={async (data) => api.createRequest({
+                  ...data,
+                  requesterLat: data.requesterLat ?? currentLocation?.lat,
+                  requesterLng: data.requesterLng ?? currentLocation?.lng,
+                  requesterLocationSource: data.requesterLocationSource ?? currentLocation?.source,
+                })}
                 onVerifyRequest={async (id) => { await api.verifyRequest(id); }}
                 onTriggerOutreach={async (id) => { await api.triggerDonorOutreach(id); }}
                 onFulfillRequest={async (id) => { await api.fulfillRequest(id); }}
@@ -626,7 +635,7 @@ export default function Home() {
 
             {/* Map Tab */}
             {activeTab === 'map' && (
-              <InteractiveMap hospitals={hospitals} requests={requests} inventory={inventory} />
+              <InteractiveMap onLocationChange={setCurrentLocation} />
             )}
           </div>
         </main>
