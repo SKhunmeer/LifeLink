@@ -1,17 +1,19 @@
 'use client';
 
-import React from 'react';
-import { Activity, Bell, Shield, HeartPulse, UserCheck, Radio } from 'lucide-react';
-import { UserSession } from '../lib/api';
+import React, { useState, useRef, useEffect } from 'react';
+import { Bell, ChevronDown, HeartPulse, Menu, Shield, X } from 'lucide-react';
 
 interface HeaderProps {
-  currentSession: UserSession | null;
+  currentSession: any;
   demoAccounts: any[];
   onSwitchUser: (userId: string) => void;
   onOpenNotifications: () => void;
   onOpenWeb3: () => void;
   isRealtimeConnected: boolean;
   notificationCount: number;
+  activeTab: string;
+  tabTitles: Record<string, string>;
+  onToggleSidebar?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -21,91 +23,189 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenNotifications,
   onOpenWeb3,
   isRealtimeConnected,
-  notificationCount
+  notificationCount,
+  activeTab,
+  tabTitles,
+  onToggleSidebar,
 }) => {
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
+        setProfileOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const currentUser = currentSession?.user;
+  const roleLabel = currentUser?.role?.replace('_', ' ') || 'Guest';
+
   return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200">
-      {/* Emergency Hotline Top Bar */}
-      <div className="bg-slate-900 text-white text-xs py-1 px-4 flex justify-between items-center">
-        <div className="flex items-center space-x-2">
-          <span className="inline-block w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
-          <span className="font-semibold text-rose-400">CRITICAL 24/7 TRAUMA TRANSFUSION DISPATCH:</span>
-          <span className="font-mono text-slate-300">1-800-BLOOD-AI (1-800-256-6324)</span>
-        </div>
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-1.5">
-            <Radio className={`w-3.5 h-3.5 ${isRealtimeConnected ? 'text-emerald-400 animate-pulse' : 'text-slate-400'}`} />
-            <span className={isRealtimeConnected ? 'text-emerald-400' : 'text-slate-400'}>
-              {isRealtimeConnected ? 'Realtime Mesh: Connected' : 'Sync: Polling'}
-            </span>
+    <header
+      className="sticky top-0 z-40 flex items-center justify-between gap-4 border-b bg-white px-4 lg:px-6"
+      style={{ height: 'var(--header-height)', borderColor: 'var(--border-default)' }}
+    >
+      {/* Left: Logo + Mobile menu + Breadcrumb */}
+      <div className="flex items-center gap-3 min-w-0">
+        <button
+          type="button"
+          onClick={onToggleSidebar}
+          className="btn-ghost flex items-center justify-center lg:hidden"
+          style={{ width: 36, height: 36, padding: 0, borderRadius: 'var(--radius-md)' }}
+          aria-label="Toggle navigation"
+        >
+          <Menu className="h-[18px] w-[18px]" />
+        </button>
+
+        <div className="flex items-center gap-2.5">
+          <div
+            className="flex items-center justify-center rounded-lg text-white"
+            style={{ width: 32, height: 32, background: 'var(--accent-primary)' }}
+          >
+            <HeartPulse className="h-[16px] w-[16px]" />
           </div>
-          <span className="text-slate-400">|</span>
-          <span className="text-slate-300">HIPAA & Privacy Architecture Verified</span>
+
+          <div className="hidden sm:block min-w-0">
+            <div className="text-sm font-bold text-gray-900 truncate">
+              BloodLink<span style={{ color: 'var(--accent-primary)' }}>.AI</span>
+            </div>
+          </div>
         </div>
+
+        {/* Breadcrumb separator */}
+        <span className="hidden md:block text-gray-300 select-none">/</span>
+        <span className="hidden md:block text-sm font-medium text-gray-500 truncate">
+          {tabTitles[activeTab] || 'Dashboard'}
+        </span>
       </div>
 
-      {/* Main Header */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        {/* Logo */}
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-600 to-rose-400 flex items-center justify-center text-white shadow-md shadow-rose-500/20">
-            <HeartPulse className="w-6 h-6" />
-          </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <span className="text-xl font-bold tracking-tight text-slate-900">BloodLink<span className="text-rose-600">.AI</span></span>
-              <span className="text-[10px] uppercase font-semibold tracking-wider px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-200">
-                Live Network
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 -mt-0.5">Real-Time Smart Blood Bank & Emergency Donor System</p>
-          </div>
+      {/* Right: Status + Notifications + Profile */}
+      <div className="flex items-center gap-2">
+        {/* Sync status */}
+        <div
+          className="hidden sm:flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md"
+          style={{ 
+            color: isRealtimeConnected ? 'var(--status-adequate)' : 'var(--text-muted)',
+            background: isRealtimeConnected ? 'var(--status-adequate-bg)' : 'var(--bg-surface-secondary)',
+          }}
+        >
+          <span
+            className="status-dot"
+            style={{
+              width: 6,
+              height: 6,
+              background: isRealtimeConnected ? 'var(--status-adequate)' : 'var(--text-muted)',
+            }}
+          />
+          {isRealtimeConnected ? 'Connected' : 'Syncing'}
         </div>
 
-        {/* Right Navigation & Role Switcher */}
-        <div className="flex items-center space-x-3">
-          {/* Demo Role Switcher */}
-          <div className="flex items-center space-x-2 bg-slate-50 border border-slate-200 rounded-lg p-1">
-            <span className="text-xs text-slate-500 pl-2 font-medium flex items-center">
-              <UserCheck className="w-3.5 h-3.5 mr-1 text-slate-400" />
-              Role:
-            </span>
-            <select
-              className="text-xs bg-transparent font-medium text-slate-800 border-none focus:ring-0 cursor-pointer pr-6 py-1"
-              value={currentSession?.user?.id || ''}
-              onChange={(e) => onSwitchUser(e.target.value)}
+        {/* Web3 (desktop only) */}
+        <button
+          type="button"
+          onClick={onOpenWeb3}
+          className="btn-ghost btn-sm hidden lg:inline-flex"
+          title="Web3 Trust Layer"
+        >
+          <Shield className="h-4 w-4 text-indigo-600" />
+        </button>
+
+        {/* Notifications */}
+        <button
+          type="button"
+          onClick={onOpenNotifications}
+          className="btn-ghost relative flex items-center justify-center"
+          style={{ width: 36, height: 36, padding: 0, borderRadius: 'var(--radius-md)' }}
+          aria-label="Notifications"
+        >
+          <Bell className="h-[16px] w-[16px]" />
+          {notificationCount > 0 && (
+            <span
+              className="absolute flex items-center justify-center text-white font-bold"
+              style={{
+                top: 4,
+                right: 4,
+                minWidth: 16,
+                height: 16,
+                fontSize: 10,
+                borderRadius: 9999,
+                background: 'var(--accent-primary)',
+                padding: '0 4px',
+              }}
             >
-              {demoAccounts.map((acc) => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.fullName} ({acc.role.toUpperCase()})
-                </option>
-              ))}
-            </select>
-          </div>
+              {notificationCount > 9 ? '9+' : notificationCount}
+            </span>
+          )}
+        </button>
 
-          {/* Web3 Trust Layer Button */}
+        {/* Profile dropdown */}
+        <div className="relative" ref={profileRef}>
           <button
-            onClick={onOpenWeb3}
-            className="flex items-center space-x-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 transition"
-            title="Inspect Polygon Amoy Smart Contract Registry"
+            type="button"
+            onClick={() => setProfileOpen(!profileOpen)}
+            className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-gray-50 transition-colors"
           >
-            <Shield className="w-3.5 h-3.5 text-indigo-600" />
-            <span className="hidden sm:inline">Web3 Registry</span>
+            <div
+              className="flex items-center justify-center rounded-md text-white font-bold text-xs"
+              style={{ width: 28, height: 28, background: '#374151' }}
+            >
+              {(currentUser?.fullName || 'G').charAt(0).toUpperCase()}
+            </div>
+            <div className="hidden lg:block text-left min-w-0">
+              <div className="text-sm font-semibold text-gray-900 truncate leading-tight" style={{ maxWidth: 120 }}>
+                {currentUser?.fullName || 'Guest'}
+              </div>
+              <div className="text-[11px] text-gray-500 capitalize leading-tight">
+                {roleLabel}
+              </div>
+            </div>
+            <ChevronDown className="h-3.5 w-3.5 text-gray-400 hidden lg:block" />
           </button>
 
-          {/* Live Notification Simulator Button */}
-          <button
-            onClick={onOpenNotifications}
-            className="relative flex items-center space-x-1.5 text-xs font-medium px-3 py-2 rounded-lg bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-700 transition"
-          >
-            <Bell className="w-3.5 h-3.5 text-rose-600" />
-            <span>SMS Feed</span>
-            {notificationCount > 0 && (
-              <span className="ml-1 px-1.5 py-0.2 rounded-full bg-rose-600 text-white text-[10px] font-bold">
-                {notificationCount}
-              </span>
-            )}
-          </button>
+          {profileOpen && (
+            <div
+              className="absolute right-0 top-full mt-1 w-64 bg-white border rounded-lg shadow-lg overflow-hidden"
+              style={{ borderColor: 'var(--border-default)', zIndex: 60 }}
+            >
+              <div className="px-3 py-2 border-b" style={{ borderColor: 'var(--border-default)' }}>
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Switch Role</div>
+              </div>
+              <div className="py-1 max-h-64 overflow-y-auto">
+                {demoAccounts.map((account) => (
+                  <button
+                    key={account.id}
+                    type="button"
+                    onClick={() => {
+                      onSwitchUser(account.id);
+                      setProfileOpen(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gray-50 transition-colors"
+                    style={{
+                      background: currentSession?.user?.id === account.id ? 'var(--bg-surface-secondary)' : undefined,
+                    }}
+                  >
+                    <div
+                      className="flex items-center justify-center rounded-md text-white font-bold text-xs flex-shrink-0"
+                      style={{ width: 28, height: 28, background: currentSession?.user?.id === account.id ? 'var(--accent-primary)' : '#6b7280' }}
+                    >
+                      {account.fullName.charAt(0)}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-gray-900 truncate">{account.fullName}</div>
+                      <div className="text-[11px] text-gray-500 capitalize">{account.role.replace('_', ' ')}</div>
+                    </div>
+                    {currentSession?.user?.id === account.id && (
+                      <span className="ml-auto text-xs font-medium" style={{ color: 'var(--accent-primary)' }}>Active</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </header>

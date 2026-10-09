@@ -1,8 +1,8 @@
 {
   "components/InteractiveMap.tsx -> react-leaflet": {
-    "id": 8445,
+    "id": "components/InteractiveMap.tsx -> react-leaflet",
     "files": [
-      "static/chunks/445.1d48c932dcfc1d3a.js"
+      "static/chunks/_app-pages-browser_node_modules_react-leaflet_lib_index_js.js"
     ]
   }
 }
